@@ -13,6 +13,7 @@ from models.with_mobilenet import PoseEstimationWithMobileNet
 from modules.keypoints import extract_keypoints, group_keypoints
 from modules.load_state import load_state
 
+from tqdm import tqdm
 
 def run_coco_eval(gt_file_path, dt_file_path):
     annotation_type = 'keypoints'
@@ -25,6 +26,7 @@ def run_coco_eval(gt_file_path, dt_file_path):
     result.evaluate()
     result.accumulate()
     result.summarize()
+    return result.stats
 
 
 def normalize(img, img_mean, img_scale):
@@ -120,7 +122,7 @@ def evaluate(labels, output_name, images_folder, net, multiscale=False, visualiz
 
     dataset = CocoValDataset(labels, images_folder)
     coco_result = []
-    for sample in dataset:
+    for sample in tqdm(dataset):
         file_name = sample['file_name']
         img = sample['img']
 
@@ -151,13 +153,16 @@ def evaluate(labels, output_name, images_folder, net, multiscale=False, visualiz
                                3, (255, 0, 255), -1)
             cv2.imshow('keypoints', img)
             key = cv2.waitKey()
-            if key == 27:  # esc
+            if key == ord(' '):  # space
+                continue
+            elif key == 27:  # esc
                 return
 
     with open(output_name, 'w') as f:
         json.dump(coco_result, f, indent=4)
+        f.close()
 
-    run_coco_eval(labels, output_name)
+    return run_coco_eval(labels, output_name)
 
 
 if __name__ == '__main__':

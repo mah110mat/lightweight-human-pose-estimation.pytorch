@@ -1,6 +1,7 @@
 import argparse
 import cv2
 import os
+import datetime
 
 import torch
 from torch.nn import DataParallel
@@ -19,6 +20,19 @@ from val import evaluate
 cv2.setNumThreads(0)
 cv2.ocl.setUseOpenCL(False)  # To prevent freeze of DataLoader
 
+from torch.utils.tensorboard import SummaryWriter
+
+logname=[
+'Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets= 20 ] ', \
+'Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets= 20 ] ', \
+'Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets= 20 ] ', \
+'Average Precision  (AP) @[ IoU=0.50:0.95 | area=medium | maxDets= 20 ] ', \
+'Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets= 20 ] ', \
+'Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets= 20 ] ', \
+'Average Recall     (AR) @[ IoU=0.50      | area=   all | maxDets= 20 ] ', \
+'Average Recall     (AR) @[ IoU=0.75      | area=   all | maxDets= 20 ] ', \
+'Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets= 20 ] ', \
+'Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets= 20 ] ' ]
 
 def train(prepared_train_labels, train_images_folder, num_refinement_stages, base_lr, batch_size, batches_per_iter,
           num_workers, checkpoint_path, weights_only, from_mobilenet, checkpoints_folder, log_after,
@@ -54,6 +68,8 @@ def train(prepared_train_labels, train_images_folder, num_refinement_stages, bas
         {'params': get_parameters_bn(net.refinement_stages, 'bias'), 'lr': base_lr * 2, 'weight_decay': 0},
     ], lr=base_lr, weight_decay=5e-4)
 
+    writer = SummaryWriter(log_dir=checkpoints_folder)
+
     num_iter = 0
     current_epoch = 0
     drop_after_epoch = [100, 200, 260]
@@ -74,7 +90,7 @@ def train(prepared_train_labels, train_images_folder, num_refinement_stages, bas
     net = DataParallel(net).cuda()
     net.train()
     for epochId in range(current_epoch, 280):
-        scheduler.step()
+        #scheduler.step()
         total_losses = [0, 0] * (num_refinement_stages + 1)  # heatmaps loss, paf loss per stage
         batch_per_iter_idx = 0
         for batch_data in train_loader:
@@ -110,11 +126,18 @@ def train(prepared_train_labels, train_images_folder, num_refinement_stages, bas
                 continue
 
             if num_iter % log_after == 0:
-                print('Iter: {}'.format(num_iter))
+                print('Iter: {}, Epoch: {} '.format(num_iter, epochId), datetime.datetime.now())
                 for loss_idx in range(len(total_losses) // 2):
                     print('\n'.join(['stage{}_pafs_loss:     {}', 'stage{}_heatmaps_loss: {}']).format(
                         loss_idx + 1, total_losses[loss_idx * 2 + 1] / log_after,
                         loss_idx + 1, total_losses[loss_idx * 2] / log_after))
+
+                    writer.add_scalar('stage{}_pafs_loss'.format(loss_idx + 1), 
+                                    total_losses[loss_idx * 2 + 1] / log_after,
+                                    num_iter)
+                    writer.add_scalar('stage{}_heatmaps_loss'.format(loss_idx + 1), 
+                                    total_losses[loss_idx * 2] / log_after,
+                                    num_iter)
                 for loss_idx in range(len(total_losses)):
                     total_losses[loss_idx] = 0
             if num_iter % checkpoint_after == 0:
@@ -127,8 +150,12 @@ def train(prepared_train_labels, train_images_folder, num_refinement_stages, bas
                            snapshot_name)
             if num_iter % val_after == 0:
                 print('Validation...')
-                evaluate(val_labels, val_output_name, val_images_folder, net)
+                dets = evaluate(val_labels, val_output_name, val_images_folder, net)
+                for ii, det in enumerate(dets):
+                    writer.add_scalar(logname[ii], det, num_iter)
                 net.train()
+            
+        scheduler.step()
 
 
 if __name__ == '__main__':
