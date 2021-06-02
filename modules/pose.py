@@ -6,17 +6,21 @@ from modules.one_euro_filter import OneEuroFilter
 
 
 class Pose:
-    num_kpts = 18
+    num_kpts = 18+2
     kpt_names = ['nose', 'neck',
                  'r_sho', 'r_elb', 'r_wri', 'l_sho', 'l_elb', 'l_wri',
                  'r_hip', 'r_knee', 'r_ank', 'l_hip', 'l_knee', 'l_ank',
                  'r_eye', 'l_eye',
-                 'r_ear', 'l_ear']
-    sigmas = np.array([.26, .79, .79, .72, .62, .79, .72, .62, 1.07, .87, .89, 1.07, .87, .89, .25, .25, .35, .35],
+                 'r_ear', 'l_ear', 'r_hand', 'l_hand']
+    sigmas = np.array([.26, .79, .79, .72, .62, .79, .72, .62, 1.07, .87, .89, 1.07, .87, .89, .25, .25, .35, .35, .62, .62],
                       dtype=np.float32) / 10.0
     vars = (sigmas * 2) ** 2
     last_id = -1
-    color = [0, 224, 255]
+    color0 = [0, 224, 255]
+    color2 = [255, 128, 0]
+    color1 = [0, 0, 255]
+    color3 = [255, 0, 0]
+    color = [color0, color2, color1, color3]
 
     def __init__(self, keypoints, confidence):
         super().__init__()
@@ -46,20 +50,26 @@ class Pose:
 
     def draw(self, img):
         assert self.keypoints.shape == (Pose.num_kpts, 2)
+        radius = [5, 5, 10, 10]
+        thickness = 3
 
-        for part_id in range(len(BODY_PARTS_PAF_IDS) - 2):
+        #for part_id in range(len(BODY_PARTS_PAF_IDS) - 2): # Mimi Kata no Setsuzoku wo Byouga shinai?
+        for part_id in range(len(BODY_PARTS_PAF_IDS) - 0):
             kpt_a_id = BODY_PARTS_KPT_IDS[part_id][0]
             global_kpt_a_id = self.keypoints[kpt_a_id, 0]
-            if global_kpt_a_id != -1:
-                x_a, y_a = self.keypoints[kpt_a_id]
-                cv2.circle(img, (int(x_a), int(y_a)), 3, Pose.color, -1)
             kpt_b_id = BODY_PARTS_KPT_IDS[part_id][1]
             global_kpt_b_id = self.keypoints[kpt_b_id, 0]
+
+            if global_kpt_a_id != -1:
+                x_a, y_a = self.keypoints[kpt_a_id]
+                cid = 2+(kpt_a_id-18) if kpt_a_id in [18, 19] else 0
+                cv2.circle(img, (int(x_a), int(y_a)), radius[cid], Pose.color[cid], -1)
             if global_kpt_b_id != -1:
                 x_b, y_b = self.keypoints[kpt_b_id]
-                cv2.circle(img, (int(x_b), int(y_b)), 3, Pose.color, -1)
+                cid = 2+(kpt_b_id-18) if kpt_b_id in [18, 19] else 0
+                cv2.circle(img, (int(x_b), int(y_b)), radius[cid], Pose.color[cid], -1)
             if global_kpt_a_id != -1 and global_kpt_b_id != -1:
-                cv2.line(img, (int(x_a), int(y_a)), (int(x_b), int(y_b)), Pose.color, 2)
+                cv2.line(img, (int(x_a), int(y_a)), (int(x_b), int(y_b)), Pose.color[1], thickness)
 
 
 def get_similarity(a, b, threshold=0.5):

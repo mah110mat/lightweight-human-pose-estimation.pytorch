@@ -37,7 +37,8 @@ logname=[
 def train(prepared_train_labels, train_images_folder, num_refinement_stages, base_lr, batch_size, batches_per_iter,
           num_workers, checkpoint_path, weights_only, from_mobilenet, checkpoints_folder, log_after,
           val_labels, val_images_folder, val_output_name, checkpoint_after, val_after):
-    net = PoseEstimationWithMobileNet(num_refinement_stages)
+
+    net = PoseEstimationWithMobileNet(num_refinement_stages, num_heatmaps=(19+2), num_pafs=(38+4))
 
     stride = 8
     sigma = 7
@@ -89,6 +90,7 @@ def train(prepared_train_labels, train_images_folder, num_refinement_stages, bas
 
     net = DataParallel(net).cuda()
     net.train()
+    #print('Iter: {}, Epoch: {} '.format(num_iter, epochId), datetime.datetime.now())
     for epochId in range(current_epoch, 280):
         #scheduler.step()
         total_losses = [0, 0] * (num_refinement_stages + 1)  # heatmaps loss, paf loss per stage

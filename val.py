@@ -1,10 +1,11 @@
+import os
 import argparse
 import cv2
 import json
 import math
 import numpy as np
 from pycocotools.coco import COCO
-from pycocotools.cocoeval import COCOeval
+from modules.pycocotools.cocoeval import COCOeval
 
 import torch
 
@@ -50,20 +51,47 @@ def pad_width(img, stride, pad_value, min_dims):
                                     cv2.BORDER_CONSTANT, value=pad_value)
     return padded_img, pad
 
-
-def convert_to_coco_format(pose_entries, all_keypoints):
+'''
+0 (0) : Nose
+1 (-1): Neck
+2 (6) : Right Shoulder
+3 (8) : Right Elbow
+4 (10): Right Wrist
+5 (5) : Left Shoulder
+6 (7) : Left Elbow
+7 (9) : Left Wrist
+8 (12): Right Hip
+9 (14): Right Knee
+10(16): Right Ankle
+11(11): Left Hip
+12(13): Left Knee
+13(15): Left Ankle
+14(2) : Right Eye
+15(1) : Left Eye
+16(4) : Right ear
+17(3) : Left Ear
+18(18): Right Hand
+19(17): Left Hand
+'''
+def convert_to_coco_format(pose_entries, all_keypoints, noneck=True):
     coco_keypoints = []
     scores = []
     for n in range(len(pose_entries)):
         if len(pose_entries[n]) == 0:
             continue
-        keypoints = [0] * 17 * 3
-        to_coco_map = [0, -1, 6, 8, 10, 5, 7, 9, 12, 14, 16, 11, 13, 15, 2, 1, 4, 3]
+        #keypoints = [0] * 17 * 3
+        #to_coco_map = [0, -1, 6, 8, 10, 5, 7, 9, 12, 14, 16, 11, 13, 15, 2, 1, 4, 3]
+        if noneck:
+            keypoints = [0] * (17+2) * 3
+            to_coco_map = [0, -1, 6, 8, 10, 5, 7, 9, 12, 14, 16, 11, 13, 15, 2, 1, 4, 3, 18, 17]
+        else:
+            keypoints = [0] * (18+2) * 3
+            to_coco_map = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
         person_score = pose_entries[n][-2]
         position_id = -1
         for keypoint_id in pose_entries[n][:-2]:
             position_id += 1
-            if position_id == 1:  # no 'neck' in COCO
+            if position_id == 1 and noneck:  # no 'neck' in COCO
                 continue
 
             cx, cy, score, visibility = 0, 0, 0, 0  # keypoint not found
@@ -84,8 +112,10 @@ def infer(net, img, scales, base_height, stride, pad_value=(0, 0, 0), img_mean=(
     normed_img = normalize(img, img_mean, img_scale)
     height, width, _ = normed_img.shape
     scales_ratios = [scale * base_height / float(height) for scale in scales]
-    avg_heatmaps = np.zeros((height, width, 19), dtype=np.float32)
-    avg_pafs = np.zeros((height, width, 38), dtype=np.float32)
+    #avg_heatmaps = np.zeros((height, width, 19), dtype=np.float32)
+    #avg_pafs = np.zeros((height, width, 38), dtype=np.float32)
+    avg_heatmaps = np.zeros((height, width, 19+2), dtype=np.float32)
+    avg_pafs = np.zeros((height, width, 38+4), dtype=np.float32)
 
     for ratio in scales_ratios:
         scaled_img = cv2.resize(normed_img, (0, 0), fx=ratio, fy=ratio, interpolation=cv2.INTER_CUBIC)
@@ -112,7 +142,7 @@ def infer(net, img, scales, base_height, stride, pad_value=(0, 0, 0), img_mean=(
     return avg_heatmaps, avg_pafs
 
 
-def evaluate(labels, output_name, images_folder, net, multiscale=False, visualize=False):
+def evaluate(labels, output_name, images_folder, net, multiscale=False, visualize=False, output_dir=None):
     net = net.cuda().eval()
     base_height = 368
     scales = [1]
@@ -130,10 +160,11 @@ def evaluate(labels, output_name, images_folder, net, multiscale=False, visualiz
 
         total_keypoints_num = 0
         all_keypoints_by_type = []
-        for kpt_idx in range(18):  # 19th for bg
+        #for kpt_idx in range(18):  # 19th for bg
+        for kpt_idx in range(18+2):  # 19th for bg
             total_keypoints_num += extract_keypoints(avg_heatmaps[:, :, kpt_idx], all_keypoints_by_type, total_keypoints_num)
 
-        pose_entries, all_keypoints = group_keypoints(all_keypoints_by_type, avg_pafs)
+        pose_entries, all_keypoints = group_keypoints(all_keypoints_by_type, avg_pafs, pose_entry_size=(20+2))
 
         coco_keypoints, scores = convert_to_coco_format(pose_entries, all_keypoints)
 
@@ -146,11 +177,15 @@ def evaluate(labels, output_name, images_folder, net, multiscale=False, visualiz
                 'score': scores[idx]
             })
 
-        if visualize:
+        if output_dir is not None or visualize:
             for keypoints in coco_keypoints:
                 for idx in range(len(keypoints) // 3):
                     cv2.circle(img, (int(keypoints[idx * 3]), int(keypoints[idx * 3 + 1])),
                                3, (255, 0, 255), -1)
+        if output_dir is not None:
+            output_fn = os.path.join(output_dir, file_name)
+            cv2.imwrite(output_fn, img)
+        if visualize:
             cv2.imshow('keypoints', img)
             key = cv2.waitKey()
             if key == ord(' '):  # space
@@ -174,10 +209,16 @@ if __name__ == '__main__':
     parser.add_argument('--checkpoint-path', type=str, required=True, help='path to the checkpoint')
     parser.add_argument('--multiscale', action='store_true', help='average inference results over multiple scales')
     parser.add_argument('--visualize', action='store_true', help='show keypoints')
+    parser.add_argument('--output-dir', type=str, help='save keypoints')
     args = parser.parse_args()
 
-    net = PoseEstimationWithMobileNet()
+    if args.output_dir is not None:
+        print('dig directory: ', args.output_dir)
+        os.makedirs(args.output_dir, exist_ok=True)
+
+    net = PoseEstimationWithMobileNet(num_heatmaps=(19+2), num_pafs=(38+4))
     checkpoint = torch.load(args.checkpoint_path)
     load_state(net, checkpoint)
 
-    evaluate(args.labels, args.output_name, args.images_folder, net, args.multiscale, args.visualize)
+    evaluate(args.labels, args.output_name, args.images_folder, net, args.multiscale, args.visualize, args.output_dir)
+    #run_coco_eval(args.labels, args.output_name)

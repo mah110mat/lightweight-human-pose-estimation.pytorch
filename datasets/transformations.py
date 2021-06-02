@@ -21,7 +21,9 @@ COCO order:
     13: "left_knee",
     14: "right_knee",
     15: "left_ankle",
-    16: "right_ankle"
+    16: "right_ankle",
+    17: "left_hand",
+    18: "right_hand"
 Internal Order:
      0: 'nose', 
      1: 'neck', 
@@ -41,6 +43,8 @@ Internal Order:
     15: 'left_eye', 
     16: 'right_ear', 
     17: 'left_ear'
+    18: "right_hand",
+    19: "left_hand"
 '''
 
 class ConvertKeypoints:
@@ -73,9 +77,11 @@ class ConvertKeypoints:
         return sample
 
     def _convert(self, keypoints, w, h):
-        # Nose, Neck, R hand, L hand, R leg, L leg, Eyes, Ears
-        reorder_map = [1, 7, 9, 11, 6, 8, 10, 13, 15, 17, 12, 14, 16, 3, 2, 5, 4]
-        converted_keypoints = list(keypoints[i - 1] for i in reorder_map)
+        # Nose, Neck, R hand, L hand, R leg, L leg, Eyes, Ears, Hands
+        #reorder_map = [1, 7, 9, 11, 6, 8, 10, 13, 15, 17, 12, 14, 16, 3, 2, 5, 4, 20, 19]
+        #converted_keypoints = list(keypoints[i - 1] for i in reorder_map)
+        reorder_map = [0, 6, 8, 10, 5, 7, 9, 12, 14, 16, 11, 13, 15, 2, 1, 4, 3, 18, 17]
+        converted_keypoints = list(keypoints[i] for i in reorder_map)
         converted_keypoints.insert(1, [(keypoints[5][0] + keypoints[6][0]) / 2,
                                        (keypoints[5][1] + keypoints[6][1]) / 2, 0])  # Add neck as a mean of shoulders
         if keypoints[5][2] == 2 or keypoints[6][2] == 2:
@@ -289,8 +295,8 @@ class Flip:
         return sample
 
     def _swap_left_right(self, keypoints):
-        right = [2, 3, 4, 8, 9, 10, 14, 16]
-        left = [5, 6, 7, 11, 12, 13, 15, 17]
+        right = [2, 3, 4, 8, 9, 10, 14, 16, 18]
+        left = [5, 6, 7, 11, 12, 13, 15, 17, 19]
         for r, l in zip(right, left):
             keypoints[r], keypoints[l] = keypoints[l], keypoints[r]
         return keypoints
